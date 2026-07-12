@@ -27,12 +27,28 @@ import definePlugin, { OptionType } from "@utils/types";
 import type { CloudUpload as TCloudUpload, Emoji, Message, RenderModalProps, Sticker } from "@vencord/discord-types";
 import { CloudUploadPlatform, StickerFormatType } from "@vencord/discord-types/enums";
 import { findByCodeLazy, findByPropsLazy, findLazy, proxyLazyWebpack } from "@webpack";
-import { ChannelStore, ConfirmModal, DraftType, EmojiStore, FluxDispatcher, Forms, GuildMemberStore, IconUtils, lodash, openModal, Parser, PermissionsBits, PermissionStore, StickersStore, UploadHandler, UserSettingsActionCreators, UserSettingsProtoStore, UserStore } from "@webpack/common";
+import { ChannelStore, ConfirmModal, DraftType, EmojiStore, FluxDispatcher, Forms, GuildMemberStore, IconUtils, lodash, openModal, Parser, PermissionsBits, PermissionStore, StickersStore, UploadAttachmentStore, UploadHandler, UserSettingsActionCreators, UserSettingsProtoStore, UserStore } from "@webpack/common";
 import { applyPalette, GIFEncoder, quantize } from "gifenc";
 import type { ReactElement, ReactNode } from "react";
 
 const BINARY_READ_OPTIONS = findByPropsLazy("readerFactory");
 const CloudUpload: typeof TCloudUpload = findLazy(m => m.prototype?.trackUploadFinished);
+
+function addFileToDraft(channelId: string, file: File) {
+    const uploads: TCloudUpload[] = UploadAttachmentStore.getUploads(channelId, DraftType.ChannelMessage);
+    uploads.push(new CloudUpload({
+        file,
+        isThumbnail: false,
+        platform: CloudUploadPlatform.WEB
+    }, channelId));
+
+    FluxDispatcher.dispatch({
+        type: "UPLOAD_ATTACHMENT_SET_UPLOADS",
+        uploads: [...uploads],
+        channelId,
+        draftType: DraftType.ChannelMessage
+    });
+}
 
 function searchProtoClassField(localName: string, protoClass: any) {
     const field = protoClass?.fields?.find((field: any) => field.localName === localName);
@@ -886,12 +902,7 @@ export default definePlugin({
                         ));
                     } else if (shouldAttachSticker) {
                         const file = await this.makeAnimatedStickerFile(link, sticker.id);
-                        options.attachmentsToUpload ??= [];
-                        options.attachmentsToUpload.push(new CloudUpload({
-                            file,
-                            isThumbnail: false,
-                            platform: CloudUploadPlatform.WEB
-                        }, channelId));
+                        addFileToDraft(channelId, file);
                         options.stickerIds!.length = 0;
                         messageObj.content = removeStickerLink(messageObj.content, sticker.id);
                         break stickerBypass;
