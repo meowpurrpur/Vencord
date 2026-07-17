@@ -87,11 +87,13 @@ export function LocalThemesTab() {
         <Flex flexDirection="column" gap="1em">
             <Card>
                 <Forms.FormTitle tag="h5">Find Themes:</Forms.FormTitle>
-                <div style={{ marginBottom: ".5em", display: "flex", flexDirection: "column" }}>
-                    <Link style={{ marginRight: ".5em" }} href="https://betterdiscord.app/themes">
+                <div style={{ marginBottom: ".5em", display: "flex", flexDirection: "column", alignItems: "flex-start" }}>
+                    <Link style={{ width: "fit-content" }} href="https://betterdiscord.app/themes">
                         BetterDiscord Themes
                     </Link>
-                    <Link href="https://github.com/search?q=discord+theme">GitHub</Link>
+                    <Link style={{ width: "fit-content" }} href="https://github.com/search?q=discord+theme">
+                        GitHub
+                    </Link>
                 </div>
                 <Forms.FormText>If using the BD site, click on "Download" and place the downloaded .theme.css file into your themes folder.</Forms.FormText>
             </Card>
