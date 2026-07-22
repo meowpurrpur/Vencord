@@ -7,7 +7,7 @@
 import { definePluginSettings } from "@api/Settings";
 import { Devs } from "@utils/constants";
 import definePlugin, { makeRange, OptionType } from "@utils/types";
-import { ApplicationStreamingStore, FluxDispatcher, RelationshipStore } from "@webpack/common";
+import { ApplicationStreamingStore, FluxDispatcher, RelationshipStore, UserStore, VoiceStateStore } from "@webpack/common";
 
 const settings = definePluginSettings({
     friendsOnly: {
@@ -44,8 +44,13 @@ export default definePlugin({
 
     flux: {
         VOICE_STATE_UPDATES({ voiceStates }: { voiceStates: VoiceStateChangeEvent[]; }) {
+            const currentUser = UserStore.getCurrentUser();
+            const currentVoice = VoiceStateStore.getVoiceStateForUser(currentUser.id);
+
+            console.log(currentVoice);
             for (const state of voiceStates) {
-                if (!state.channelId) continue;
+                if (!state.channelId || state.channelId !== currentVoice?.channelId) continue;
+                if (state.userId === currentUser.id) continue;
 
                 const activeStreams = ApplicationStreamingStore.getAllActiveStreamsForChannel(state.channelId);
                 const streams = ApplicationStreamingStore.getAllApplicationStreamsForChannel(state.channelId);
