@@ -47,10 +47,8 @@ export default definePlugin({
             const currentUser = UserStore.getCurrentUser();
             const currentVoice = VoiceStateStore.getVoiceStateForUser(currentUser.id);
 
-            console.log(currentVoice);
             for (const state of voiceStates) {
                 if (!state.channelId || state.channelId !== currentVoice?.channelId) continue;
-                if (state.userId === currentUser.id) continue;
 
                 const activeStreams = ApplicationStreamingStore.getAllActiveStreamsForChannel(state.channelId);
                 const streams = ApplicationStreamingStore.getAllApplicationStreamsForChannel(state.channelId);
