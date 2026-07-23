@@ -642,6 +642,10 @@ export const Devs = /* #__PURE__*/ Object.freeze({
         name: "NightmareSan",
         id: 304239816466235392n
     },
+    theo: {
+        name: "theo",
+        id: 1081551899397992509n
+    },
     angelcube: {
         name: "angelcube",
         id: 958505257288208446n
