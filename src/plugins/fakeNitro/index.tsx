@@ -17,38 +17,20 @@
 */
 
 import { addMessagePreEditListener, addMessagePreSendListener, removeMessagePreEditListener, removeMessagePreSendListener } from "@api/MessageEvents";
-import { isPluginEnabled } from "@api/PluginManager";
 import { definePluginSettings } from "@api/Settings";
 import { ApngBlendOp, ApngDisposeOp, parseAPNG } from "@utils/apng";
 import { Devs } from "@utils/constants";
 import { getCurrentGuild } from "@utils/discord";
 import { Logger } from "@utils/Logger";
 import definePlugin, { OptionType } from "@utils/types";
-import type { CloudUpload as TCloudUpload, Emoji, Message, RenderModalProps, Sticker } from "@vencord/discord-types";
-import { CloudUploadPlatform, StickerFormatType } from "@vencord/discord-types/enums";
-import { findByCodeLazy, findByPropsLazy, findLazy, proxyLazyWebpack } from "@webpack";
-import { ChannelStore, ConfirmModal, DraftType, EmojiStore, FluxDispatcher, Forms, GuildMemberStore, IconUtils, lodash, openModal, Parser, PermissionsBits, PermissionStore, StickersStore, UploadAttachmentStore, UploadHandler, UserSettingsActionCreators, UserSettingsProtoStore, UserStore } from "@webpack/common";
+import type { Emoji, Message, RenderModalProps, Sticker } from "@vencord/discord-types";
+import { StickerFormatType } from "@vencord/discord-types/enums";
+import { findByCodeLazy, findByPropsLazy, proxyLazyWebpack } from "@webpack";
+import { ChannelStore, ConfirmModal, DraftType, EmojiStore, FluxDispatcher, Forms, GuildMemberStore, IconUtils, lodash, openModal, Parser, PermissionsBits, PermissionStore, StickersStore, UploadHandler, UserSettingsActionCreators, UserSettingsProtoStore, UserStore } from "@webpack/common";
 import { applyPalette, GIFEncoder, quantize } from "gifenc";
 import type { ReactElement, ReactNode } from "react";
 
 const BINARY_READ_OPTIONS = findByPropsLazy("readerFactory");
-const CloudUpload: typeof TCloudUpload = findLazy(m => m.prototype?.trackUploadFinished);
-
-function addFileToDraft(channelId: string, file: File) {
-    const uploads: TCloudUpload[] = UploadAttachmentStore.getUploads(channelId, DraftType.ChannelMessage);
-    uploads.push(new CloudUpload({
-        file,
-        isThumbnail: false,
-        platform: CloudUploadPlatform.WEB
-    }, channelId));
-
-    FluxDispatcher.dispatch({
-        type: "UPLOAD_ATTACHMENT_SET_UPLOADS",
-        uploads: [...uploads],
-        channelId,
-        draftType: DraftType.ChannelMessage
-    });
-}
 
 function searchProtoClassField(localName: string, protoClass: any) {
     const field = protoClass?.fields?.find((field: any) => field.localName === localName);
@@ -90,17 +72,6 @@ const fakeNitroEmojiRegex = /\/emojis\/(\d+?)\.(png|webp|gif)/;
 const fakeNitroStickerRegex = /\/stickers\/(\d+?)\./;
 const fakeNitroGifStickerRegex = /\/attachments\/\d+?\/\d+?\/(\d+?)\.gif/;
 const hyperLinkRegex = /\[.+?\]\((https?:\/\/.+?)\)/;
-
-function messageContainsStickerLink(content: string, stickerId: string) {
-    return content.includes(`/stickers/${stickerId}.`);
-}
-
-function removeStickerLink(content: string, stickerId: string) {
-    return content
-        .replace(new RegExp(String.raw`\s*\[.*?\]\(https?:\/\/[^\s)]*\/stickers\/${stickerId}\.[^\s)]*\)`, "g"), "")
-        .replace(new RegExp(String.raw`\s*https?:\/\/\S*\/stickers\/${stickerId}\.\S+`, "g"), "")
-        .trim();
-}
 
 const settings = definePluginSettings({
     enableEmojiBypass: {
@@ -211,7 +182,7 @@ function showCannotEmbedNotice() {
 
 export default definePlugin({
     name: "FakeNitro",
-    authors: [Devs.Arjix, Devs.D3SOX, Devs.Ven, Devs.fawn, Devs.captain, Devs.Nuckyz, Devs.AutumnVN, Devs.sadan, Devs.theo],
+    authors: [Devs.Arjix, Devs.D3SOX, Devs.Ven, Devs.fawn, Devs.captain, Devs.Nuckyz, Devs.AutumnVN, Devs.sadan],
     description: "Allows you to send fake emojis/stickers, use nitro themes, and stream in nitro quality",
     tags: ["Emotes", "Appearance", "Customisation", "Chat"],
     dependencies: ["MessageEventsAPI"],
@@ -769,7 +740,8 @@ export default definePlugin({
         return `https://media.discordapp.net/stickers/${id}.${ext}?size=${settings.store.stickerSize}`;
     },
 
-    async makeAnimatedStickerFile(stickerLink: string, stickerId: string) {
+    async sendAnimatedSticker(stickerLink: string, stickerId: string, channelId: string) {
+
         const { frames, width, height } = await fetch(stickerLink)
             .then(res => res.arrayBuffer())
             .then(parseAPNG);
@@ -821,11 +793,7 @@ export default definePlugin({
 
         gif.finish();
 
-        return new File([gif.bytesView() as Uint8Array<ArrayBuffer>], `${stickerId}.gif`, { type: "image/gif" });
-    },
-
-    async sendAnimatedSticker(stickerLink: string, stickerId: string, channelId: string) {
-        const file = await this.makeAnimatedStickerFile(stickerLink, stickerId);
+        const file = new File([gif.bytesView() as Uint8Array<ArrayBuffer>], `${stickerId}.gif`, { type: "image/gif" });
         UploadHandler.promptToUpload([file], ChannelStore.getChannel(channelId), DraftType.ChannelMessage);
     },
 
@@ -867,12 +835,6 @@ export default definePlugin({
                 if (!sticker)
                     break stickerBypass;
 
-                const shouldAttachSticker = isPluginEnabled("StickerPaste") && sticker.format_type === StickerFormatType.APNG;
-                if (!shouldAttachSticker && messageContainsStickerLink(messageObj.content, sticker.id)) {
-                    options.stickerIds!.length = 0;
-                    break stickerBypass;
-                }
-
                 // Discord Stickers are now free yayyy!! :D
                 if ("pack_id" in sticker)
                     break stickerBypass;
@@ -900,14 +862,7 @@ export default definePlugin({
                                 </div>
                             </ConfirmModal>
                         ));
-                    } else if (shouldAttachSticker) {
-                        const file = await this.makeAnimatedStickerFile(link, sticker.id);
-                        addFileToDraft(channelId, file);
-                        options.stickerIds!.length = 0;
-                        messageObj.content = removeStickerLink(messageObj.content, sticker.id);
-                        break stickerBypass;
                     } else {
-                        options.stickerIds!.length = 0;
                         this.sendAnimatedSticker(link, sticker.id, channelId);
                     }
 
