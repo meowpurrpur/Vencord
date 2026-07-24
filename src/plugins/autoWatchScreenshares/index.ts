@@ -36,6 +36,41 @@ interface VoiceStateChangeEvent {
     sessionId: string;
 }
 
+const ignoredStreams = new Set<string>();
+
+function getStreamKey(stream: any, guildId: string, channelId: string) {
+    return stream.streamType === "guild"
+        ? `guild:${guildId}:${channelId}:${stream.ownerId}`
+        : `call:${channelId}:${stream.ownerId}`;
+}
+
+function watchStreams(channelId: string, guildId: string) {
+    const activeStreams = ApplicationStreamingStore.getAllActiveStreamsForChannel(channelId);
+    const streams = ApplicationStreamingStore.getAllApplicationStreamsForChannel(channelId);
+
+    const currentKeys = new Set<string>();
+    for (const stream of streams) {
+        const streamKey = getStreamKey(stream, guildId, channelId);
+        currentKeys.add(streamKey);
+
+        if (activeStreams.some(s => s.ownerId === stream.ownerId)) continue;
+        if (ignoredStreams.has(streamKey)) continue;
+        if (settings.store.friendsOnly && !RelationshipStore.isFriend(stream.ownerId)) continue;
+
+        FluxDispatcher.dispatch({
+            type: "STREAM_WATCH",
+            streamKey,
+            allowMultiple: true
+        });
+    }
+
+    for (const key of ignoredStreams) {
+        if (!currentKeys.has(key)) {
+            ignoredStreams.delete(key);
+        }
+    }
+}
+
 export default definePlugin({
     name: "AutoWatchScreenshares",
     description: "Automatically watches screenshares when joining a voice channel or a screenshare starts",
@@ -47,33 +82,17 @@ export default definePlugin({
             const currentUser = UserStore.getCurrentUser();
             const currentVoice = VoiceStateStore.getVoiceStateForUser(currentUser.id);
 
+            if (!currentVoice?.channelId) return;
             for (const state of voiceStates) {
-                if (!state.channelId || state.channelId !== currentVoice?.channelId) continue;
+                if (state.channelId !== currentVoice.channelId) continue;
 
-                const activeStreams = ApplicationStreamingStore.getAllActiveStreamsForChannel(state.channelId);
-                const streams = ApplicationStreamingStore.getAllApplicationStreamsForChannel(state.channelId);
+                watchStreams(state.channelId, state.guildId!);
+            }
+        },
 
-                let watchedCount = 0;
-                for (const stream of streams) {
-                    // check if tthe stream is already being watched
-                    if (activeStreams.some(s => s.ownerId === stream.ownerId)) {
-                        watchedCount++;
-                        continue;
-                    }
-
-                    if (watchedCount >= settings.store.maxStreams) break;
-                    if (settings.store.friendsOnly && !RelationshipStore.isFriend(stream.ownerId)) continue;
-
-                    FluxDispatcher.dispatch({
-                        type: "STREAM_WATCH",
-                        streamKey: stream.streamType === "guild" ?
-                            `guild:${state.guildId}:${state.channelId}:${stream.ownerId}` :
-                            `call:${state.channelId}:${stream.ownerId}`,
-                        allowMultiple: true
-                    });
-
-                    watchedCount++;
-                }
+        STREAM_DELETE({ streamKey, reason }: { streamKey: string; reason: string; }) {
+            if (reason === "user_requested") {
+                ignoredStreams.add(streamKey);
             }
         }
     }
