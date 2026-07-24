@@ -49,12 +49,19 @@ function watchStreams(channelId: string, guildId: string) {
     const streams = ApplicationStreamingStore.getAllApplicationStreamsForChannel(channelId);
 
     const currentKeys = new Set<string>();
+    let watchedCount = 0;
+
     for (const stream of streams) {
         const streamKey = getStreamKey(stream, guildId, channelId);
         currentKeys.add(streamKey);
 
-        if (activeStreams.some(s => s.ownerId === stream.ownerId)) continue;
+        if (activeStreams.some(s => s.ownerId === stream.ownerId)) {
+            watchedCount++;
+            continue;
+        }
+
         if (ignoredStreams.has(streamKey)) continue;
+        if (watchedCount >= settings.store.maxStreams) break;
         if (settings.store.friendsOnly && !RelationshipStore.isFriend(stream.ownerId)) continue;
 
         FluxDispatcher.dispatch({
@@ -62,6 +69,8 @@ function watchStreams(channelId: string, guildId: string) {
             streamKey,
             allowMultiple: true
         });
+
+        watchedCount++;
     }
 
     for (const key of ignoredStreams) {
