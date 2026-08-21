@@ -20,9 +20,9 @@ import { definePluginSettings } from "@api/Settings";
 import ErrorBoundary from "@components/ErrorBoundary";
 import { Devs } from "@utils/constants";
 import definePlugin, { OptionType } from "@utils/types";
-import { CloudUpload } from "@vencord/discord-types";
+import { CloudUpload, WebUploadItem } from "@vencord/discord-types";
 import { findByCodeLazy } from "@webpack";
-import { useState } from "@webpack/common";
+import { ConfirmModal, openModal, useState } from "@webpack/common";
 
 const ActionBarIcon = findByCodeLazy("Children.map", "isValidElement", "dangerous:");
 
@@ -69,6 +69,30 @@ const settings = definePluginSettings({
     }
 });
 
+function anonymiseFilename(originalFileName: string) {
+    // ignore files like .gitignore as it would end up as {random}.gitignore
+    if (originalFileName.startsWith("."))
+        return originalFileName;
+
+    const tarMatch = tarExtMatcher.exec(originalFileName);
+    const extIdx = tarMatch?.index ?? originalFileName.lastIndexOf(".");
+    const ext = extIdx !== -1 ? originalFileName.slice(extIdx) : "";
+
+    switch (settings.store.method) {
+        case Methods.Random:
+            const chars = "0123456789bdfhjkmnpqrstvwxz";
+
+            return Array.from(
+                { length: settings.store.randomisedLength },
+                () => chars[Math.floor(Math.random() * chars.length)]
+            ).join("") + ext;
+        case Methods.Consistent:
+            return settings.store.consistent + ext;
+        case Methods.Timestamp:
+            return Date.now() + ext;
+    }
+}
+
 export default definePlugin({
     name: "AnonymiseFileNames",
     authors: [Devs.fawn],
@@ -93,6 +117,19 @@ export default definePlugin({
                 replace: "arguments[0].canEdit!==false?$self.AnonymiseUploadButton(arguments[0]):null,"
             },
         },
+        {
+            find: '"UPLOAD_ATTACHMENT_SET_FILE"',
+            replacement: [
+                {
+                    match: /file:(\i)(,draftType:\i)/,
+                    replace: "file:await($self.anonymiseCommandFileUpload($1))$2"
+                },
+                {
+                    match: /setFile\((\i)\){/,
+                    replace: "async setFile($1){"
+                }
+            ]
+        }
     ],
 
     AnonymiseUploadButton: ErrorBoundary.wrap(({ upload }: { upload: CloudUpload; }) => {
@@ -121,26 +158,36 @@ export default definePlugin({
             return;
         }
 
-        const originalFileName = upload.filename;
-        const tarMatch = tarExtMatcher.exec(originalFileName);
-        const extIdx = tarMatch?.index ?? originalFileName.lastIndexOf(".");
-        const ext = extIdx !== -1 ? originalFileName.slice(extIdx) : "";
+        upload.filename = anonymiseFilename(upload.filename);
+    },
 
-        const newFilename = (() => {
-            switch (settings.store.method) {
-                case Methods.Random:
-                    const chars = "0123456789bdfhjkmnpqrstvwxz";
-                    return Array.from(
-                        { length: settings.store.randomisedLength },
-                        () => chars[Math.floor(Math.random() * chars.length)]
-                    ).join("") + ext;
-                case Methods.Consistent:
-                    return settings.store.consistent + ext;
-                case Methods.Timestamp:
-                    return Date.now() + ext;
+    async anonymiseCommandFileUpload(upload: WebUploadItem) {
+        const confirmed = await new Promise<boolean>(resolve => {
+            openModal(props => (
+                <ConfirmModal
+                    {...props}
+                    title="Anonymise upload?"
+                    subtitle="Would you like to anonymise this file upload?"
+                    confirmText="Yes"
+                    cancelText="No"
+                    variant="primary"
+                    onConfirm={() => resolve(true)}
+                    onCancel={() => resolve(false)}
+                />
+            ));
+        });
+
+        if (!confirmed) return upload;
+
+        upload.file = new File(
+            [upload.file],
+            anonymiseFilename(upload.file.name),
+            {
+                type: upload.file.type,
+                lastModified: upload.file.lastModified,
             }
-        })();
+        );
 
-        upload.filename = newFilename;
+        return upload;
     }
 });
